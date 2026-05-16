@@ -2,47 +2,10 @@ from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
 import json
-
-genai.configure(api_key="AIzaSyBZbPbru3ULNbs6RFX5qxvCcWe6I1C7Ypw")
-gemini = genai.GenerativeModel("gemini-2.5-flash")
-
-documents = [
-    # Network/Recon
-    "Just discovered a new way to use nmap for stealthy network scanning without triggering IDS",
-    "masscan is way faster than nmap for large scale port scanning, anyone else using it?",
-    "best tools for network reconnaissance without getting detected by firewalls",
-    "passive recon is underrated, shodan alone can give you so much about a target",
-
-    # Ransomware
-    "new ransomware strain spotted targeting Canadian energy sector companies",
-    "LockBit 3.0 updated their encryptor, much harder to decrypt without paying",
-    "ransomware group leaked 40GB of data from Ottawa government contractor",
-    "double extortion ransomware is now the norm, encrypt AND threaten to leak",
-
-    # Phishing
-    "crafted a convincing phishing page that bypasses Microsoft 365 MFA",
-    "spear phishing campaigns targeting Canadian banks are increasing this quarter",
-    "evilginx2 is still the best tool for credential harvesting via reverse proxy",
-    "how to make phishing emails that bypass spam filters",
-
-    # Exploits
-    "new zero day in Windows kernel privilege escalation, no patch yet",
-    "CVE-2024-1234 proof of concept just dropped on github, patch your systems",
-    "zero day market prices have gone up, iOS exploits now worth over 2 million",
-    "exploit development for beginners, understanding buffer overflows",
-
-    # Dark web
-    "new dark web marketplace launched after previous one got seized by FBI",
-    "which markets are still reliable after the recent law enforcement takedowns?",
-    "cryptocurrency mixing services getting harder to use after recent crackdowns",
-    "vendor ratings on dark web forums are easily manipulated, dont trust them",
-
-    # CTF / Learning
-    "just finished HackTheBox machine, learned a lot about privilege escalation",
-    "best CTF platforms for learning web application penetration testing",
-    "writeup for last weekend CTF challenge, SQL injection to RCE",
-    "OSCP certification worth it in 2024, thinking of starting the course",
-]
+from stackapi import StackAPI
+import html
+import re
+import time
 
 CONTEXT = (
     "I have a dataset of posts scraped from hacker and cybersecurity forums. "
@@ -51,6 +14,31 @@ CONTEXT = (
 )
 
 TEXT_DELIMITER = "####"
+
+genai.configure(api_key="")
+gemini = genai.GenerativeModel("gemini-2.5-flash")
+
+site = StackAPI('security')
+questions = site.fetch('questions', 
+    sort='activity',
+    order='desc',
+    pagesize=100,
+    filter='withbody'
+)
+
+documents = []
+for q in questions['items']:
+    title = q.get('title', '')
+    body = q.get('body', '')
+
+    body_clean = re.sub(r'<[^>]+>', '', body)
+    body_clean = html.unescape(body_clean)
+
+    combined = title + " " + body_clean
+    combined = " ".join(combined.split())
+
+    documents.append(combined)
+
 
 def generate_prompt(rep_docs):
     docs_text = TEXT_DELIMITER.join(rep_docs)
@@ -76,7 +64,7 @@ def generate_prompt(rep_docs):
     """
     return prompt
 
-print(f"Loaded {len(documents)} documents")
+print(f"Collected {len(documents)} documents")
 
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -87,16 +75,20 @@ model = BERTopic(
 )
 
 topics, probs = model.fit_transform(documents)
-
 topic_info = model.get_topic_info()
+print(topic_info[["Topic", "Count", "Name"]])
+
 for _, row in topic_info.iterrows():
     if row["Topic"] == -1:
         continue
     rep_docs = row["Representative_Docs"]
     prompt = generate_prompt(rep_docs)
     response = gemini.generate_content(prompt)
+
+    time.sleep(15)
+
     try:
-        text = response.text.strip().replace("```json", "").replace("```", "")
+        text = response.text.strip().replace("```json", "").replace("```python", "").replace("```", "")
         result = json.loads(text)
         print(f"Topic {row['Topic']}:")
         print(f"  Name: {result['topic_name']}")
