@@ -2,3 +2,6 @@ bertopic
 sentence-transformers
 google-generativeai
 stackapi
+scikit-learn
+river
+joblib
